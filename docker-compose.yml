@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Ollama сервис для локального режима
+  # Ollama сервис для локального режима - запускается ТОЛЬКО с профилем 'local'
   ollama:
     image: ollama/ollama:latest
     container_name: mts-ollama
@@ -11,7 +11,6 @@ services:
       - OLLAMA_HOST=0.0.0.0:11434
     volumes:
       - ollama-data:/root/.ollama
-    # Сервис запускается только если нужен локальный режим
     profiles:
       - local
     healthcheck:
@@ -19,9 +18,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    entrypoint: >
+      sh -c "
+      ollama serve &
+      sleep 15
+      echo 'Ollama started, pulling qwen:8b model...'
+      ollama pull qwen:8b
+      echo 'Model loaded successfully'
+      wait
+      "
 
-  # LLM API сервис
-  llm-api:
+  # LLM API сервис для локального режима (с Ollama)
+  llm-api-local:
     build:
       context: ./llm_service
       dockerfile: Dockerfile
@@ -29,9 +37,9 @@ services:
     ports:
       - "${LLM_SERVICE_PORT:-8000}:8000"
     environment:
-      - MODE=${MODE:-local}
+      - MODE=local
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen:8b}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_BASE_URL=http://ollama:11434
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-turbo}
       - CUSTOM_BASE_URL=${CUSTOM_BASE_URL:-https://api.openai.com/v1}
@@ -39,12 +47,44 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-        required: false
     volumes:
       - ./llm_module:/app/llm_module
+      - ./llm_service:/app
     command: /app/entrypoint.sh
     networks:
       - llm-network
+    profiles:
+      - local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # LLM API сервис для удаленного режима (OpenAI API, БЕЗ Ollama)
+  llm-api-remote:
+    build:
+      context: ./llm_service
+      dockerfile: Dockerfile
+    container_name: mts-llm-api
+    ports:
+      - "${LLM_SERVICE_PORT:-8000}:8000"
+    environment:
+      - MODE=remote
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen:8b}
+      - OLLAMA_BASE_URL=
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-turbo}
+      - CUSTOM_BASE_URL=${CUSTOM_BASE_URL:-https://api.openai.com/v1}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./llm_module:/app/llm_module
+      - ./llm_service:/app
+    command: /app/entrypoint.sh
+    networks:
+      - llm-network
+    profiles:
+      - remote
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
