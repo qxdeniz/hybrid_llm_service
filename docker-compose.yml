@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Ollama сервис для локального режима
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mts-ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    volumes:
+      - ollama-data:/root/.ollama
+    # Сервис запускается только если нужен локальный режим
+    profiles:
+      - local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # LLM API сервис
+  llm-api:
+    build:
+      context: ./llm_service
+      dockerfile: Dockerfile
+    container_name: mts-llm-api
+    ports:
+      - "${LLM_SERVICE_PORT:-8000}:8000"
+    environment:
+      - MODE=${MODE:-local}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen:8b}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-turbo}
+      - CUSTOM_BASE_URL=${CUSTOM_BASE_URL:-https://api.openai.com/v1}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false
+    volumes:
+      - ./llm_module:/app/llm_module
+    command: /app/entrypoint.sh
+    networks:
+      - llm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  llm-network:
+    driver: bridge
+
+volumes:
+  ollama-data:
+    driver: local
