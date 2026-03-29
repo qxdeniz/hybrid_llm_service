@@ -1,4 +1,4 @@
-# MTS Hack LLM Service
+#Hybrid LLM Service
 
 Полнофункциональный Docker сервис для локальной и удаленной работы с языковыми моделями.
 
@@ -360,11 +360,3 @@ curl -v http://localhost:8000/health
 # Попытайся скачать вручную
 docker-compose exec ollama ollama pull qwen:8b
 ```
-
-## Лицензия
-
-MIT
-
-## Контакты
-
-MTS Hack Team
